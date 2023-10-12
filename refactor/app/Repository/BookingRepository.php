@@ -59,15 +59,16 @@ class BookingRepository extends BaseRepository
     {
         $cuser = User::find($user_id);
         $usertype = '';
-        $emergencyJobs = array();
-        $noramlJobs = array();
-        if ($cuser && $cuser->is('customer')) {
-            $jobs = $cuser->jobs()->with('user.userMeta', 'user.average', 'translatorJobRel.user.average', 'language', 'feedback')->whereIn('status', ['pending', 'assigned', 'started'])->orderBy('due', 'asc')->get();
-            $usertype = 'customer';
-        } elseif ($cuser && $cuser->is('translator')) {
-            $jobs = Job::getTranslatorJobs($cuser->id, 'new');
-            $jobs = $jobs->pluck('jobs')->all();
-            $usertype = 'translator';
+        $emergencyJobs = []; // we have to follow the same array convention. like [] or array(). after noticing the return array style, i modified this array style. *ignorable change
+        $noramlJobs = []; // same change here
+        if ($cuser) {
+            if ($cuser->is('customer')) {
+                $jobs = $cuser->jobs()->with('user.userMeta', 'user.average', 'translatorJobRel.user.average', 'language', 'feedback')->whereIn('status', ['pending', 'assigned', 'started'])->orderBy('due', 'asc')->get();
+                $usertype = 'customer';
+            } elseif ($cuser->is('translator')) {
+                $jobs = Job::getTranslatorJobs($cuser->id, 'new')->pluck('jobs')->all();
+                $usertype = 'translator';
+            }
         }
         if ($jobs) {
             foreach ($jobs as $jobitem) {
@@ -77,7 +78,8 @@ class BookingRepository extends BaseRepository
                     $noramlJobs[] = $jobitem;
                 }
             }
-            $noramlJobs = collect($noramlJobs)->each(function ($item, $key) use ($user_id) {
+            // I think you need to use 'map' function here because we are creating a new collections as saving it to normalJobs.
+            $noramlJobs = collect($noramlJobs)->map(function ($item) use ($user_id) {
                 $item['usercheck'] = Job::checkParticularJob($user_id, $item);
             })->sortBy('due')->all();
         }
@@ -132,59 +134,39 @@ class BookingRepository extends BaseRepository
         $consumer_type = $user->userMeta->consumer_type;
         if ($user->user_type == env('CUSTOMER_ROLE_ID')) {
             $cuser = $user;
+            /**
+             * Removing the code duplication and simplifing the code
+             */
+            $response['status'] = 'fail';
+            $response['message'] = "Du måste fylla in alla fält";
 
             if (!isset($data['from_language_id'])) {
-                $response['status'] = 'fail';
-                $response['message'] = "Du måste fylla in alla fält";
                 $response['field_name'] = "from_language_id";
                 return $response;
             }
-            if ($data['immediate'] == 'no') {
-                if (isset($data['due_date']) && $data['due_date'] == '') {
-                    $response['status'] = 'fail';
-                    $response['message'] = "Du måste fylla in alla fält";
-                    $response['field_name'] = "due_date";
-                    return $response;
-                }
-                if (isset($data['due_time']) && $data['due_time'] == '') {
-                    $response['status'] = 'fail';
-                    $response['message'] = "Du måste fylla in alla fält";
-                    $response['field_name'] = "due_time";
-                    return $response;
-                }
-                if (!isset($data['customer_phone_type']) && !isset($data['customer_physical_type'])) {
-                    $response['status'] = 'fail';
-                    $response['message'] = "Du måste göra ett val här";
-                    $response['field_name'] = "customer_phone_type";
-                    return $response;
-                }
-                if (isset($data['duration']) && $data['duration'] == '') {
-                    $response['status'] = 'fail';
-                    $response['message'] = "Du måste fylla in alla fält";
-                    $response['field_name'] = "duration";
-                    return $response;
-                }
-            } else {
-                if (isset($data['duration']) && $data['duration'] == '') {
-                    $response['status'] = 'fail';
-                    $response['message'] = "Du måste fylla in alla fält";
-                    $response['field_name'] = "duration";
-                    return $response;
+
+            if (isset($data['immediate']) && $data['immediate'] === 'no'){
+                $requiredFields = ['due_date', 'due_time', 'customer_phone_type', 'customer_physical_type', 'duration'];
+
+                foreach ($requiredFields as $field) {
+                    if (!isset($data[$field]) || $data[$field] === '') {
+                        $response['field_name'] = $field;
+                        return $response;
+                    }
                 }
             }
-            if (isset($data['customer_phone_type'])) {
-                $data['customer_phone_type'] = 'yes';
-            } else {
-                $data['customer_phone_type'] = 'no';
+            elseif (isset($data['immediate']) && $data['immediate'] === 'yes' && isset($data['duration']) && $data['duration'] === ''){
+                $response['field_name'] = 'duration';
+                return $response;
             }
 
-            if (isset($data['customer_physical_type'])) {
-                $data['customer_physical_type'] = 'yes';
-                $response['customer_physical_type'] = 'yes';
-            } else {
-                $data['customer_physical_type'] = 'no';
-                $response['customer_physical_type'] = 'no';
-            }
+            //useing ternary operator insted of if
+            $data['customer_phone_type'] = isset($data['customer_phone_type']) ? 'yes' : 'no';
+
+            //usiging trenery opt again for better view and simplicity
+            $data['customer_physical_type'] = isset($data['customer_physical_type']) ? 'yes' : 'no';
+            // if yes no same for both, save one var element into another
+            $response['customer_physical_type'] = $data['customer_physical_type'];
 
             if ($data['immediate'] == 'yes') {
                 $due_carbon = Carbon::now()->addMinute($immediatetime);
@@ -199,7 +181,8 @@ class BookingRepository extends BaseRepository
                 $due_carbon = Carbon::createFromFormat('m/d/Y H:i', $due);
                 $data['due'] = $due_carbon->format('Y-m-d H:i:s');
                 if ($due_carbon->isPast()) {
-                    $response['status'] = 'fail';
+                    // response.status already decleared above
+                   // $response['status'] = 'fail';
                     $response['message'] = "Can't create booking in past";
                     return $response;
                 }
@@ -230,13 +213,22 @@ class BookingRepository extends BaseRepository
             {
                 $data['certified'] = 'n_health';
             }
-            if ($consumer_type == 'rwsconsumer')
-                $data['job_type'] = 'rws';
-            else if ($consumer_type == 'ngo')
-                $data['job_type'] = 'unpaid';
-            else if ($consumer_type == 'paid')
-                $data['job_type'] = 'paid';
-            $data['b_created_at'] = date('Y-m-d H:i:s');
+//            if ($consumer_type == 'rwsconsumer')
+//                $data['job_type'] = 'rws';
+//            else if ($consumer_type == 'ngo')
+//                $data['job_type'] = 'unpaid';
+//            else if ($consumer_type == 'paid')
+//                $data['job_type'] = 'paid';
+            //the above code can be handled using pre decleared array like this code below
+            $jobType = [
+                'rwsconsumer' => 'rws',
+                'ngo' => 'unpaid',
+                'paid' => 'paid',
+            ];
+            if (isset($jobType[$consumer_type]))
+                $data['job_type'] = $jobType[$consumer_type];
+
+            $data['b_created_at'] = Carbon::now();
             if (isset($due))
                 $data['will_expire_at'] = TeHelper::willExpireAt($due, $data['b_created_at']);
             $data['by_admin'] = isset($data['by_admin']) ? $data['by_admin'] : 'no';
@@ -245,7 +237,8 @@ class BookingRepository extends BaseRepository
 
             $response['status'] = 'success';
             $response['id'] = $job->id;
-            $data['job_for'] = array();
+            // can be commented below code....
+            $data['job_for'] = [];
             if ($job->gender != null) {
                 if ($job->gender == 'male') {
                     $data['job_for'][] = 'Man';
@@ -267,6 +260,8 @@ class BookingRepository extends BaseRepository
             $data['customer_town'] = $cuser->userMeta->city;
             $data['customer_type'] = $cuser->userMeta->customer_type;
 
+            // It seems like the code below is commented by you. So there is not need for above code block
+
             //Event::fire(new JobWasCreated($job, $data, '*'));
 
 //            $this->sendNotificationToSuitableTranslators($job->id, $data, '*');// send Push for New job posting
@@ -287,6 +282,11 @@ class BookingRepository extends BaseRepository
     {
         $user_type = $data['user_type'];
         $job = Job::findOrFail(@$data['user_email_job_id']);
+        //needed null handling
+        if(empty($job)){
+            $response['status'] = 'fail';
+            return $response;
+        }
         $job->user_email = @$data['user_email'];
         $job->reference = isset($data['reference']) ? $data['reference'] : '';
         $user = $job->user()->get()->first();

@@ -130,7 +130,7 @@ class UserRepository extends BaseRepository
 
 
         } else if ($request['role'] == env('TRANSLATOR_ROLE_ID')) {
-
+            //duplicated commands...can be written in seprate functions
             $user_meta = UserMeta::firstOrCreate(['user_id' => $model->id]);
 
             $user_meta->translator_type = $request['translator_type'];
@@ -142,6 +142,7 @@ class UserRepository extends BaseRepository
             $user_meta->translator_level = $request['translator_level'];
             $user_meta->additional_info = $request['additional_info'];
             $user_meta->post_code = $request['post_code'];
+            //duplicated commands...can be written in seprate functions
             $user_meta->address = $request['address'];
             $user_meta->address_2 = $request['address_2'];
             $user_meta->town = $request['town'];

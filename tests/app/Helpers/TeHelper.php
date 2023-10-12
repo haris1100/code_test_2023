@@ -47,16 +47,15 @@ class TeHelper
 
         $difference = $due_time->diffInHours($created_at);
 
-
-        if($difference <= 90)
-            $time = $due_time;
-        elseif ($difference <= 24) {
-            $time = $created_at->addMinutes(90);
-        } elseif ($difference > 24 && $difference <= 72) {
-            $time = $created_at->addHours(16);
-        } else {
-            $time = $due_time->subHours(48);
-        }
+        //there is some logic error, the second else condt. will never run in any case....
+        //i can optimize the code to a certain extent
+        if ($difference <= 24)
+                $time = $created_at->addMinutes(90);
+        elseif ($difference > 24 && $difference <= 72)
+                $time = $created_at->addHours(16);
+        elseif($difference <= 90)  // will run if diff is greater then 72 and less then 90 hours,
+                $time = $due_time;
+        else $time = $due_time->subHours(48);
 
         return $time->format('Y-m-d H:i:s');
 

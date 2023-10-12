@@ -19,6 +19,7 @@ class BookingController extends Controller
      * @var BookingRepository
      */
     protected $repository;
+    protected $allowedRoles;
 
     /**
      * BookingController constructor.
@@ -27,6 +28,7 @@ class BookingController extends Controller
     public function __construct(BookingRepository $bookingRepository)
     {
         $this->repository = $bookingRepository;
+        $this->allowedRoles = [env('ADMIN_ROLE_ID'), env('SUPERADMIN_ROLE_ID')]; //initializing them globally, can be used somewhere else
     }
 
     /**
@@ -40,12 +42,19 @@ class BookingController extends Controller
             $response = $this->repository->getUsersJobs($user_id);
 
         }
-        elseif($request->__authenticatedUser->user_type == env('ADMIN_ROLE_ID') || $request->__authenticatedUser->user_type == env('SUPERADMIN_ROLE_ID'))
-        {
-            $response = $this->repository->getAll($request);
-        }
+        elseif (in_array($request->__authenticatedUser->user_type, $this->allowedRoles)) {
 
-        return response($response);
+            $response = $this->repository->getAll($request);
+
+        }
+        // else missing, we can handle this properly, like no loophole left
+        else{
+
+            return response([ 'message'=> 'Data is ambiguous '],404);
+
+        }
+        // if all ok then the response code can be sent with code
+        return response($response,200);
     }
 
     /**
@@ -55,8 +64,9 @@ class BookingController extends Controller
     public function show($id)
     {
         $job = $this->repository->with('translatorJobRel.user')->find($id);
-
-        return response($job);
+        if ($job)
+            return response($job,200);
+        return response(['message'=>'Data not found'],404);
     }
 
     /**
@@ -68,8 +78,9 @@ class BookingController extends Controller
         $data = $request->all();
 
         $response = $this->repository->store($request->__authenticatedUser, $data);
-
-        return response($response);
+        if($response['status'] == 'fail')
+            return response($response,404);
+        return response($response,200);
 
     }
 
